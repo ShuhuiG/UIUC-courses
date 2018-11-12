@@ -1,0 +1,205 @@
+---
+title: "STAT542, Homework 1"
+author: "Shuhui Guo"
+fontsize: 12pt
+output: pdf_document
+---
+
+# Problem 1
+
+```{r echo = FALSE}
+library(MASS)
+set.seed(1)
+P = 4
+N = 200
+rho = 0.5
+V <- rho^abs(outer(1:P, 1:P, "-"))
+X = as.matrix(mvrnorm(N, mu=rep(0,P), Sigma=V))
+beta = as.matrix(c(1, 1, 0.5, 0.5))
+Y = X %*% beta + rnorm(N)
+```
+
+## a)
+Since $\hat{\Sigma}_{MLE}=\frac{1}{N}[(X-\hat{X})^{T}(X-\hat{X})]$, we can get the sample variance-covariance matrix $\hat{\Sigma}=$
+```{r}
+X_hat <- colMeans(X)
+Sigma_hat<-t(X-matrix(rep(X_hat,N),N,P,byrow = T))%*%(X-matrix(rep(X_hat,N),
+           N,P,byrow = T))/N
+Sigma_hat
+```
+
+And $\hat{\Sigma}^{-1/2}=$
+```{r}
+"%^%" <- function(x, n) 
+  with(eigen(x), vectors %*% (values^n * t(vectors)))
+Sigma_hat %^% (-0.5)
+```
+
+## b)
+Write the function:
+```{r}
+mydist <- function(x1,x2) sqrt(sum((x1 - x2) ^ 2))
+x = c(0.5,0.5,0.5,0.5)
+save <- c()
+
+for(i in 1:200){
+save[i] <- mydist(X[i,],x)
+}
+
+order = order(save, decreasing = FALSE)[1:5]
+estimation = mean(Y[order])
+```
+
+The row numbers of the closest 5 subjects are `r order`
+
+The 5-NN estimation at the target point is `r estimation`
+
+## c)
+Write a function:
+```{r}
+mydist2 <- function(x1,x2,s) sqrt((x1 - x2)%*% solve(s) %*% (x1-x2))
+x = c(0.5,0.5,0.5,0.5)
+save2 <- c()
+
+for(i in 1:200){
+save2[i] <- mydist2(X[i,],x,Sigma_hat)
+}
+
+order2 = order(save2, decreasing = FALSE)[1:5]
+estimation2 = mean(Y[order2])
+```
+
+The row numbers of the closest 5 subjects are `r order2`
+
+The 5-NN estimation at the target point is `r estimation2`
+
+## d)
+The 5-NN estimation based on the Euclidean distance seems better. 
+
+From the results of b) and c), we can see that four of the closest 5 subjects based on the Euclidean and Mahalanobis distance are the same. But the 5-NN estimations at the target point are quite different, which indicates that the different subject makes a big difference. This situation may happen by instance and perhaps the Mahalanobis distance is not suitable here.
+
+In addition, the 5-NN estimation based on the Euclidean distance is closer to $Y=x*\beta=1.5$, so it is better.
+
+# Problem 2
+
+## a)
+The regression model
+\begin{align}
+Y=f(X)+\epsilon
+\end{align}
+where E$(\epsilon)=0$ and Var$(\epsilon)=\sigma^2$.
+
+The 5-NN estimation
+\begin{align}
+\hat{y}=\frac{1}{5}\sum_{x_i \in N_5(x)}y_i
+\end{align}
+where N_5(x) defines the 5 samples from the training data that are closest to x.
+
+Since the degrees of freedom is defined as $\sum_{i=1}^{n}Cov(\hat{y_i},y_i)/\sigma^2$, the degrees of freedom of the model using $k=5$ is 
+\begin{align}
+\sum_{i=1}^{n}Cov(\hat{y_i},y_i)/\sigma^2 = \sum_{i=1}^{n}\frac{1}{5}Cov(y_i,y_i)/\sigma^2 = \sum_{i=1}^{n}\frac{1}{5}\sigma^2/\sigma^2 = \frac{n}{5}
+\end{align}
+
+## b)
+Generate a design matrix X:
+```{r}
+library(MASS)
+set.seed(1)
+P = 4
+N = 200
+V <- diag(P)
+X = as.matrix(mvrnorm(N, mu=rep(0,P), Sigma=V))
+```
+
+Define the model $\overline{Y}=f(X)=X_1+X_2+2X_3+2X_4$
+```{r}
+beta = as.matrix(c(1, 1, 2, 2))
+Y = X %*% beta + rnorm(N)  #generate the response variables by adding noise
+```
+
+```{r}
+library(kknn)
+myfun <- function(times) {
+  y <- matrix(0,times,N)
+  yhat <- matrix(0,times,N)  #matrix of the estimations
+  for (i in 1:times){
+    Y = X %*% beta + rnorm(N)
+    y[i,] = Y
+    k = 5
+    knn.fit = kknn(Y ~ X, train = data.frame(x = X, y = Y), 
+              test = data.frame(x = X), k = k, kernel = "rectangular")  #from intro.r
+    yhat[i,] = knn.fit$fitted.values  #obtain the estimations
+  }
+  
+  #Calculate the covariance
+  ybar = X %*% beta
+  cov <- c()
+  for (i in 1:N){
+  cov[i] = sum((yhat[,i]-mean(yhat[,i]))%*%(y[,i]-ybar[i]))/(times-1)
+  }
+  covariance = sum(cov)
+  return(covariance)
+}
+
+myfun(20)
+```
+
+My estimated degrees of freedom is close to the theoretical value.
+
+## c)
+$Cov(\hat{y},y)=Cov(X(X^TX)^{-1}X^Ty,y)=X(X^TX)^{-1}X^TCov(y,y)=\sigma^2X(X^TX)^{-1}X^T$
+
+Then, $df(\hat{f})=\frac{1}{\sigma^2}Trace(Cov(\hat{y},y))=\frac{1}{\sigma^2}Trace(\sigma^2X(X^TX)^{-1}X^T)=Trace(X(X^TX)^{-1}X^T)=Trace((X^TX)^{-1}X^TX)=Trace(I_p)=p$
+
+Therefore, the theoretical degrees of freedom for this linear regression is p.
+
+# Problem 3
+
+```{r}
+library(ElemStatLearn)
+library(class)
+data(SAheart)
+Y = SAheart$chd
+X = cbind(SAheart$age,SAheart$tobacco)
+
+nfold = 10
+set.seed(1)
+infold = sample(rep(1:nfold, length.out=length(Y)))
+mydata = data.frame(x = X, y = Y)
+
+K = 50  #maximum number of k that I am considering
+errorMatrix = matrix(NA, K, nfold)  #save the prediction error of each fold
+errorMatrix.train = matrix(NA, K, nfold)
+
+for (l in 1:nfold)
+{
+	for (k in 1:K)
+	{
+		#calculate testing error
+	  knn.fit = knn(train = mydata[infold != l, 1:2], 
+	            test = mydata[infold == l, 1:2], 
+	            cl = mydata[infold != l,3], k = k, prob = FALSE)
+		errorMatrix[k, l] = 1-mean(knn.fit == mydata$y[infold == l])
+		#calculate training error
+		knn.fit.train = knn(train = mydata[infold != l, 1:2], 
+		                test = mydata[infold != l, 1:2], 
+		                cl = mydata[infold != l,3], k = k, prob = FALSE)
+		errorMatrix.train[k, l] = 1-mean(knn.fit.train == mydata$y[infold != l])
+	}
+}
+best = which.min(apply(errorMatrix, 1, mean))
+```
+
+We can report the training error:
+```{r}
+errorMatrix.train[1:5,1:5]
+```
+
+And we plot the averaged cross-validation error curve for difference choices of k:
+```{r}
+plot(rep(1:K, nfold), as.vector(errorMatrix), pch = 19, cex = 0.5, 
+     ylab="misclassification error",xlab="k")   #plot the results
+points(1:K, apply(errorMatrix, 1, mean), col = "red", pch = 19, type = "l", lwd = 3)
+```
+
+The best $k$ is `r best`.

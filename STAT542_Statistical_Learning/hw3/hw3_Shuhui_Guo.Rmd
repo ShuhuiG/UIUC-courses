@@ -1,0 +1,571 @@
+---
+title: "STAT542, Homework 3"
+author: "Shuhui Guo"
+fontsize: 12pt
+output: pdf_document
+---
+
+# Problem 1
+
+##a)
+
+```{r, echo = F, include = F}
+library(quadprog)
+library(e1071)
+set.seed(1)
+n <- 40
+p <- 2
+xpos <- matrix(rnorm(n*p,mean=0,sd=1),n,p)
+xneg <- matrix(rnorm(n*p,mean=4,sd=1),n,p)
+x <- rbind(xpos,xneg)
+y <- matrix(c(rep(1,n),rep(-1,n)))
+
+Dmat <- diag(p+1)
+Dmat[1,1] <- 0
+ridge <- 10^(-5)*diag(p+1)
+Dmat <- Dmat+ridge
+dvec <- rep(0,p+1)
+X <- cbind(rep(1,(2*n)),x)
+Amat <- diag(c(y)) %*% X
+bvec <- rep(1,2*n)
+```
+
+After formulating the primal of the linear separable SVM optimization problem, we can solve it by solve.QP and get the estimations of $\beta_{0}$, $\beta_{1}$, $\beta_{2}$:
+
+```{r, echo = FALSE}
+sol <- solve.QP(Dmat,dvec,t(Amat),bvec)
+beta = sol$solution
+```
+
+\begin{align*}
+\hat{\beta}_{0}&=`r round(beta[1],4)`\\
+\hat{\beta}_{1}&=`r round(beta[2],4)`\\
+\hat{\beta}_{2}&=`r round(beta[3],4)`
+\end{align*}
+
+Let $y_{i}(x^{T}_{i}\beta+\beta_{0})=1$, we can get the support vectors:
+
+```{r, echo = F}
+sv = x[which((y*(X %*% beta)-1) < 1e-10),]
+```
+
+\begin{align*}
+(`r round(sv[1,1],4)`,`r round(sv[1,2],4)`), (`r round(sv[2,1],4)`,`r round(sv[2,2],4)`), (`r round(sv[3,1],4)`,`r round(sv[3,2],4)`)
+\end{align*}
+
+Plot the results produced by solve.QP as follow:
+
+```{r, echo = F, fig.height=4.2, fig.width=5.8}
+plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5, main = "solve.QP")
+legend("topleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 0.9)
+w_quad <- t(as.matrix(sol$solution[-1]))
+b_quad <- sol$solution[1]
+abline(a= -b_quad/w_quad[1,2], b=-w_quad[1,1]/w_quad[1,2], col="blue", lty=1, lwd = 2)
+abline(a= (-b_quad-1)/w_quad[1,2], b=-w_quad[1,1]/w_quad[1,2], col="blue", lty=3, lwd = 2)
+abline(a= (-b_quad+1)/w_quad[1,2], b=-w_quad[1,1]/w_quad[1,2], col="blue", lty=3, lwd = 2)
+points(sv, col="black", cex=3)
+```
+
+In this plot, the blue solid line is the decision line using the results produced by solve.QP. The circled points are the support vectors.
+
+Then use e1071 package to solve the primal of the linear separable SVM optimization problem. We can get the estimations of $\beta_{0}$, $\beta_{1}$, $\beta_{2}$:
+
+```{r, echo = F}
+svm.fit <- svm(y ~ ., data = data.frame(x, y), type='C-classification', kernel='linear',scale=FALSE, cost = 10000)
+w <- t(svm.fit$coefs) %*% svm.fit$SV
+b <- -svm.fit$rho
+```
+
+\begin{align*}
+\hat{\beta}_{0}&=`r round(b,4)`\\
+\hat{\beta}_{1}&=`r round(w[1],4)`\\
+\hat{\beta}_{2}&=`r round(w[2],4)`
+\end{align*}
+
+And the support vectors:
+
+```{r, echo = F}
+sv2 = x[svm.fit$index, ]
+```
+
+\begin{align*}
+(`r round(sv2[1,1],4)`,`r round(sv2[1,2],4)`), (`r round(sv2[2,1],4)`,`r round(sv2[2,2],4)`), (`r round(sv2[3,1],4)`,`r round(sv2[3,2],4)`)
+\end{align*}
+
+Plot the results produced by e1071 package as follow:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5, main = "e1071")
+legend("topleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 0.9)
+abline(a= -b/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=1, lwd = 2)
+abline(a= (-b-1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+abline(a= (-b+1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+points(x[svm.fit$index, ], col="black", cex=3)
+```
+
+In this plot, the black solid line is the decision line using the results produced by e1071 package. The circled points are the support vectors.
+
+From the above report, we can see that my solutions and the results produced by e1071 package are almost the same.
+
+##b)
+
+After formulating the dual form of the linear separable SVM, we can solve it by solve.QP and get the estimations of $\beta_{0}$, $\beta_{1}$, $\beta_{2}$:
+
+```{r, echo = F}
+n <- 80
+Dmat <- matrix(0,n,n)
+for (i in 1:n){
+  for (j in 1:n){
+    Dmat[i,j] = y[i]*y[j]*(t(x[i,]) %*% x[j,])
+  }
+}
+ridge <- 10^(-5)*diag(n)
+Dmat <- Dmat+ridge
+dvec <- rep(1,n)
+A.Equality <- y
+Amat <- cbind(A.Equality,diag(n))
+bvec <- c(0,rep(0,n))
+
+sol <- solve.QP(Dmat,dvec,Amat,bvec,meq = 1)
+alpha = sol$solution
+
+beta_hat <- rep(0,p)
+for (i in 1:n){
+  beta_hat = beta_hat+alpha[i]*y[i]*x[i,]
+}
+beta0_hat = -(max(x[41:80,] %*% beta_hat)+min(x[1:40,] %*% beta_hat))/2
+```
+
+\begin{align*}
+\hat{\beta}_{0}&=`r round(beta0_hat,4)`\\
+\hat{\beta}_{1}&=`r round(beta_hat[1],4)`\\
+\hat{\beta}_{2}&=`r round(beta_hat[2],4)`
+\end{align*}
+
+Let $\alpha_{i}>0$, we can get the support vectors:
+
+```{r, echo = F}
+sv3 = x[which(alpha > 1e-2),]
+```
+
+\begin{align*}
+(`r round(sv3[1,1],4)`,`r round(sv3[1,2],4)`), (`r round(sv3[2,1],4)`,`r round(sv3[2,2],4)`), (`r round(sv3[3,1],4)`,`r round(sv3[3,2],4)`)
+\end{align*}
+
+Plot the results produced by solve.QP as follow:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5, main = "solve.QP")
+legend("topleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 0.9)
+w_dual <- t(as.matrix(beta_hat))
+b_dual <- beta0_hat
+abline(a= -b_dual/w_dual[1,2], b=-w_dual[1,1]/w_dual[1,2], col="blue", lty=1, lwd = 2)
+abline(a= (-b_dual-1)/w_dual[1,2], b=-w_dual[1,1]/w_dual[1,2], col="blue", lty=3, lwd = 2)
+abline(a= (-b_dual+1)/w_dual[1,2], b=-w_dual[1,1]/w_dual[1,2], col="blue", lty=3, lwd = 2)
+points(sv3, col="black", cex=3)
+```
+
+In this plot, the blue solid line is the decision line using the results produced by solve.QP. The circled points are the support vectors.
+
+Then use e1071 package to solve this. We can get the estimations of $\beta_{0}$, $\beta_{1}$, $\beta_{2}$:
+
+```{r, echo = F}
+svm.fit <- svm(y ~ ., data = data.frame(x, y), type='C-classification', kernel='linear',scale=FALSE, cost = 10000)
+w <- t(svm.fit$coefs) %*% svm.fit$SV
+b <- -svm.fit$rho
+```
+
+\begin{align*}
+\hat{\beta}_{0}&=`r round(b,4)`\\
+\hat{\beta}_{1}&=`r round(w[1],4)`\\
+\hat{\beta}_{2}&=`r round(w[2],4)`
+\end{align*}
+
+And the support vectors:
+
+```{r, echo = F}
+sv4 = x[svm.fit$index, ]
+```
+
+\begin{align*}
+(`r round(sv4[1,1],4)`,`r round(sv4[1,2],4)`), (`r round(sv4[2,1],4)`,`r round(sv4[2,2],4)`), (`r round(sv4[3,1],4)`,`r round(sv4[3,2],4)`)
+\end{align*}
+
+Plot the results produced by e1071 package as follow:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5, main = "e1071")
+legend("topleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 0.9)
+abline(a= -b/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=1, lwd = 2)
+abline(a= (-b-1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+abline(a= (-b+1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+points(sv4, col="black", cex=3)
+```
+
+In this plot, the black solid line is the decision line using the results produced by e1071 package. The circled points are the support vectors.
+
+From the above report, we can see that my solutions and the results produced by e1071 package are almost the same.
+
+## c)
+
+Generate the nonseparable data:
+
+```{r}
+set.seed(70)
+n <- 10 # number of data points for each class
+p <- 2 # dimension
+xpos <- matrix(rnorm(n*p,mean=0,sd=1),n,p)
+xneg <- matrix(rnorm(n*p,mean=1.5,sd=1),n,p)
+x <- rbind(xpos,xneg)
+y <- matrix(c(rep(1,n),rep(-1,n)))
+```
+
+Set $C=0.1$. After formulating the dual form of the linear nonseparable SVM, we can solve it by solve.QP and get the estimations of $\beta_{0}$, $\beta_{1}$, $\beta_{2}$:
+
+```{r, echo = F}
+C <- 0.1
+n <- 20
+Dmat <- matrix(0,n,n)
+for (i in 1:n){
+  for (j in 1:n){
+    Dmat[i,j] = y[i]*y[j]*(t(x[i,]) %*% x[j,])
+  }
+}
+ridge <- 10^(-5)*diag(n)
+Dmat <- Dmat+ridge
+dvec <- rep(1,n)
+A.Equality <- y
+Amat <- cbind(A.Equality,diag(n),-diag(n))
+bvec <- c(0,rep(0,n),rep(-C,n))
+
+sol <- solve.QP(Dmat,dvec,Amat,bvec,meq = 1)
+alpha = sol$solution
+index <- which((alpha >= 10^(-4))&(alpha <= 0.11))
+
+beta_hat <- rep(0,p)
+for (i in index){
+  beta_hat = beta_hat+alpha[i]*y[i]*x[i,]
+}
+
+x_new = x %*% beta_hat
+index_new <- which((alpha >= 10^(-4))&(alpha <= 0.1-10^(-4)))
+beta0_hat <- -mean(x_new[index_new])
+```
+
+\begin{align*}
+\hat{\beta}_{0}&=`r round(beta0_hat,4)`\\
+\hat{\beta}_{1}&=`r round(beta_hat[1],4)`\\
+\hat{\beta}_{2}&=`r round(beta_hat[2],4)`
+\end{align*}
+
+Let $0<\alpha_{i}<C$, we can get the support vectors. Plot the results produced by solve.QP as follow:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+b_new <- beta0_hat
+w_new <- t(as.matrix(beta_hat))
+plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5, main = "solve.QP")
+legend("topleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 0.7)
+abline(a= -b_new/w_new[1,2], b=-w_new[1,1]/w_new[1,2], col="blue", lty=1, lwd = 2)
+abline(a= (-b_new-1)/w_new[1,2], b=-w_new[1,1]/w_new[1,2], col="blue", lty=3, lwd = 2)
+abline(a= (-b_new+1)/w_new[1,2], b=-w_new[1,1]/w_new[1,2], col="blue", lty=3, lwd = 2)
+points(x[index, ], col="black", cex=3)
+```
+
+In this plot, the blue solid line is the separating line using the results produced by solve.QP. The circled points are the support vectors.
+
+Then use e1071 package to solve this. We can get the estimations of $\beta_{0}$, $\beta_{1}$, $\beta_{2}$:
+
+```{r, echo = F}
+svm.fit <- svm(y ~ ., data = data.frame(x, y), type='C-classification', kernel='linear',scale=FALSE, cost = 0.1)
+w <- t(svm.fit$coefs) %*% svm.fit$SV
+b <- -svm.fit$rho
+```
+
+\begin{align*}
+\hat{\beta}_{0}&=`r round(b,4)`\\
+\hat{\beta}_{1}&=`r round(w[1],4)`\\
+\hat{\beta}_{2}&=`r round(w[2],4)`
+\end{align*}
+
+Plot the results produced by e1071 package as follow:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5, main = "e1071")
+legend("topleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 0.7)
+abline(a= -b/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=1, lwd = 2)
+abline(a= (-b-1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+abline(a= (-b+1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+points(x[svm.fit$index, ], col="black", cex=3)
+```
+
+In this plot, the black solid line is the seperating line using the results produced by e1071 package. The circled points are the support vectors.
+
+From the above report, we can see that my solutions and the results produced by e1071 package are almost the same.
+
+## d)
+
+In this problem, I firstly shuffled the original dataset, then used my SVM code to do 5-fold cross validation with different C and found the highest prediction accuracy is 0.721. The corresponding tuning parameter can be $C=5$.
+
+To select the tuning parameter, I tried different C in the interval $[0.01,100]$ and found the prediction accuracy fluctuated around 0.72. Also, when $C\geq5$, the prediction accuracies are very close. So in the previous paragraph, I say that $C=5$ can be the tuning parameter. And I choose $C=0.05,0.1,0.5,1,5$ to report the results:
+
+```{r, echo = F, include = F}
+library(quadprog)
+library(e1071)
+library(ElemStatLearn)
+data(SAheart)
+
+SAheart$chd[SAheart$chd == 0] <- -1
+SAheart$famhist <- model.matrix( ~ famhist - 1, data = SAheart) [,2]
+
+set.seed(1)
+n = dim(SAheart)[1]
+sample <- sample(sequence(n))
+SAheart_new <- SAheart[sample,]
+rownames(SAheart_new) <- sequence(n)
+SAheart_new <- as.matrix(SAheart_new)
+
+mysvm <- function(x,y,C){
+  n = dim(x)[1]
+  p = dim(x)[2]
+  Dmat <- matrix(0,n,n)
+  for (i in 1:n){
+    for (j in 1:n){
+      Dmat[i,j] = y[i]*y[j]*(t(x[i,]) %*% x[j,])
+    }
+  }
+  ridge <- 10^(-5)*diag(n)
+  Dmat <- Dmat+ridge
+  dvec <- rep(1,n)
+  A.Equality <- y
+  Amat <- cbind(A.Equality,diag(n),-diag(n))
+  bvec <- c(0,rep(0,n),rep(-C,n))
+  
+  sol <- solve.QP(Dmat,dvec,Amat,bvec,meq = 1)
+  alpha = sol$solution
+  index <- which((alpha >= 10^(-4))&(alpha <= C+10^(-5)))
+  
+  beta_hat <- rep(0,p)
+  for (i in index){
+    beta_hat = beta_hat+alpha[i]*y[i]*x[i,]
+  }
+  
+  x_new = x %*% beta_hat
+  beta0_hat <- -mean(x_new[index])
+  return(c(beta0_hat,beta_hat))
+}
+
+nrFolds <- 5
+# generate array containing fold-number for each sample (row)
+folds <- rep_len(1:nrFolds, nrow(SAheart_new))
+
+mycv <- function(C){
+  myerror <- c()
+  # actual cross validation
+  for (k in 1:nrFolds) {
+    fold <- which(folds == k)
+    data.train <- SAheart_new[-fold,]
+    data.test <- SAheart_new[fold,]
+    
+    beta <- mysvm(data.train[,-10],data.train[,10],C)
+    
+    n_test <- dim(data.test)[1]
+    X <- cbind(rep(1,n_test),data.test[,-10])
+    
+    mypre <- sign(X %*% beta)
+    
+    myerror[k] <- mean(mypre == data.test[,10])
+  }
+  return(mean(myerror))
+}
+
+cv <- function(C){
+  error <- c()
+  for (k in 1:nrFolds) {
+    fold <- which(folds == k)
+    data.train <- SAheart_new[-fold,]
+    data.test <- SAheart_new[fold,]
+    
+    svm.fit <- svm(chd ~ ., data = data.train, type='C-classification', kernel='linear',scale=FALSE, cost=C)
+    pre <- predict(svm.fit,data.test[,-10])
+    error[k] <- mean(pre == data.test[,10])
+  }
+  return(mean(error))
+}
+
+C_seq <- c(0.05,0.1,0.5,1,5)
+error_mycv <- c()
+error_cv <- c()
+for (i in 1:length(C_seq)){
+  C <- C_seq[i]
+  error_mycv[i] <- mycv(C)
+  error_cv[i] <- cv(C)
+}
+```
+
+\begin{align*}
+When \quad C=0.05, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_mycv[1],3)`\\
+When \quad C=0.10, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_mycv[2],3)`\\
+When \quad C=0.50, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_mycv[3],3)`\\
+When \quad C=1.00, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_mycv[4],3)`\\
+When \quad C=5.00, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_mycv[5],3)`
+\end{align*}
+
+I then used e1071 package to do 5-fold cross validation and found the highest prediction accuracy is 0.727. The corresponding tuning parameter is $C=0.1$.
+
+The report of the results produced by e1071 package with $C=0.05,0.1,0.5,1,5$ is as follow:
+
+\begin{align*}
+When \quad C=0.05, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_cv[1],3)`\\
+When \quad C=0.10, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_cv[2],3)`\\
+When \quad C=0.50, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_cv[3],3)`\\
+When \quad C=1.00, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_cv[4],3)`\\
+When \quad C=5.00, \quad the \quad prediction \quad accuracy \quad is \quad `r round(error_cv[5],3)`
+\end{align*}
+
+From the above report, we can see that the results produced by my SVM code and the results produced by e1071 package are very close.
+
+
+# Problem 2
+
+When $X\leq\xi_{1}$, 
+
+\begin{align*}
+f(X)=\sum_{j=0}^{3}\beta_{j}X^{j}
+\end{align*}
+
+Since $f(X)$ is linear for $X\leq\xi_{1}$, $f^\prime(X)$ is a constant. So
+
+\begin{align*}
+f^{\prime\prime}(X)=2\beta_{2}+6\beta_{3}X=0
+\end{align*}
+
+To make this equation holds for all $X\leq\xi_{1}$, we can get $\beta_{2}$ and $\beta_{3}$ are both 0. So 1) is proved.
+Hence, $f(X)$ can be written as:
+
+\begin{align*}
+f(X)=\beta_{0}+\beta_{1}X+\sum_{k=1}^{K}\theta_{k}{(X-\xi_{k})}^3_{+}
+\end{align*}
+
+When $X\geq\xi_{K}$, 
+
+\begin{align*}
+f(X)=\beta_{0}+\beta_{1}X+\sum_{k=1}^{K}\theta_{k}{(X-\xi_{k})}^3
+\end{align*}
+
+Since $f(X)$ is linear for $X\geq\xi_{K}$, $f^\prime(X)$ is a constant. So
+
+\begin{align*}
+f^{\prime\prime}(X)=6\sum_{k=1}^{K}\theta_{k}(X-\xi_{k})=6(\sum_{k=1}^{K}\theta_{k}X-\sum_{k=1}^{K}\theta_{k}\xi_{k})=0
+\end{align*}
+
+To make this equation holds for all $X\geq\xi_{K}$, we can get $\sum_{k=1}^{K}\theta_{k}=0$ and $\sum_{k=1}^{K}\theta_{k}\xi_{k}=0$. So 2) and 3) are proved.
+
+With the results established, we can get
+
+\begin{align*}
+\sum_{k=1}^{K-2}\alpha_{k}d_{k}(X)&=\sum_{k=1}^{K-2}\theta_{k}[{(X-\xi_{k})}^3_{+}-{(X-\xi_{K})}^3_{+}]\\
+&=\sum_{k=1}^{K-2}\theta_{k}{(X-\xi_{k})}^3_{+}-{(X-\xi_{K})}^3_{+}\sum_{k=1}^{K-2}\theta_{k}\\
+&=\sum_{k=1}^{K-2}\theta_{k}{(X-\xi_{k})}^3_{+}-{(X-\xi_{K})}^3_{+}(0-\theta_{K}-\theta_{K-1})\\
+&=\sum_{k=1}^{K-2}\theta_{k}{(X-\xi_{k})}^3_{+}+(\theta_{K}+\theta_{K-1}){(X-\xi_{K})}^3_{+}
+\end{align*}
+
+And
+
+\begin{align*}
+\sum_{k=1}^{K-2}\alpha_{k}d_{K-1}(X)&=(\sum_{k=1}^{K-2}\theta_{k}\xi_{K}-\sum_{k=1}^{K-2}\theta_{k}\xi_{k})d_{K-1}(X)\\
+&=[0-(\theta_{K}+\theta_{K-1})]\xi_{K}d_{K-1}(X)-[0-(\theta_{K}\xi_{K}+\theta_{K-1}\xi_{K-1})]d_{K-1}(X)\\
+&=-(\xi_{K}-\xi_{K-1})\theta_{K-1}d_{K-1}(X)\\
+&=-\theta_{K-1}[{(X-\xi_{K-1})}^3_{+}-{(X-\xi_{K})}^3_{+}]
+\end{align*}
+
+Therefore,
+
+\begin{align*}
+\sum_{k=1}^{K-2}\alpha_{k}(d_{k}(X)-d_{K-1}(X))&=\sum_{k=1}^{K-2}\alpha_{k}d_{k}(X)-\sum_{k=1}^{K-2}\alpha_{k}d_{K-1}(X)\\
+&=\sum_{k=1}^{K-2}\theta_{k}{(X-\xi_{k})}^3_{+}+(\theta_{K}+\theta_{K-1}){(X-\xi_{K})}^3_{+}\\
+&+\theta_{K-1}[{(X-\xi_{K-1})}^3_{+}-{(X-\xi_{K})}^3_{+}]\\
+&=\sum_{k=1}^{K}\theta_{k}{(X-\xi_{k})}^3_{+}
+\end{align*}
+
+So we have
+
+\begin{align*}
+\beta_{0}+\beta_{1}X+\sum_{k=1}^{K}\theta_{k}{(X-\xi_{k})}^3=\beta_{0}+\beta_{1}X+\sum_{k=1}^{K-2}\alpha_{k}(d_{k}(X)-d_{K-1}(X))
+\end{align*}
+
+So the power series representation can be rewrote as
+
+\begin{align*}
+f(X)=\beta_{0}+\beta_{1}X+\sum_{k=1}^{K-2}\alpha_{k}(d_{k}(X)-d_{K-1}(X))
+\end{align*}
+
+
+# Problem 3
+
+## I. Introduction
+
+The dataset in this part collects detailed information of 398 mass shootings in the United States of America in 1966-2017. These mass shootings resulted in 1996 deaths and 2488 injured. The average number of mass shootings per year is 7 for the last 50 years.
+
+## II. Question
+
+In this part, I would like to calculate the number of victims per year and explore the trend of total victims in the latest years.
+
+## III. Description Analysis
+
+The scattered plot of the total victims in every incident during 1966-2017 is as follow:
+
+```{r, echo = F, include = F}
+shooting <- read.csv("C:/Users/guoshuhui/Desktop/542/homework/hw3/Mass Shootings Dataset Ver 2.csv")
+victims <- shooting$Total.victims
+date <- as.Date(shooting$Date, "%m/%d/%Y")
+
+library(ggplot2)
+library(reshape2)
+library(lubridate)
+library(splines)
+```
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+target <- data.frame(date,victims)
+ggplot(target,aes(date,victims))+ geom_point()+labs(title="Total Victims")
+```
+
+From this plot, we can see that the number of total victims fluctuates around a relatively small value before 2010. Nevertheless, after 2010, the number of victims increased. The latest and also the worst mass shooting of October 2, 2017 caused 585 victims.
+
+Then we can calculate the number of victims per year and plot the results:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+year = year(date)
+year_sum <- tapply(victims, year, FUN=sum)
+year_row <- as.numeric(rownames(year_sum))
+year_sum <- data.frame(year_row,year_sum)
+colnames(year_sum) <- c("year","victims")
+year_miss <- c(1967:1970,1973,1975,1977,1978,1980,1981)
+victims_miss <- rep(0,length(year_miss))
+year_miss <- data.frame(year_miss,victims_miss)
+colnames(year_miss) <- c("year","victims")
+year_sum <- rbind(year_sum,year_miss)
+rownames(year_sum)[43:52] <- c(1967:1970,1973,1975,1977,1978,1980,1981)
+ggplot(year_sum,aes(year_sum$year,year_sum$victims))+ geom_point()+labs(x="year",y="victims",title="Total Victims Per Year")
+```
+
+From this plot, we can see that the number of victims per year is fluctuating with an increasing trend. After the year of 2010, the increasing trend is more obvious and the number of victims reaches the highest in 2017.
+
+## IV. Model Fitting
+
+To explore the trend of total victims in the latest years, we choose the Smoothing Spline to fit the number of victims per year. While doing the model fitting, the Smoothing Spline method can select the number and location of knots automatically. Plot the fitting line as follow:
+
+```{r, echo = F, fig.align = 'center', fig.height=4.2, fig.width=5.8}
+fit = smooth.spline(year_sum$year, year_sum$victims)
+fitted = predict(fit,year_sum$year)
+fitted = as.data.frame(fitted)
+gplot = ggplot(year_sum,aes(year_sum$year,year_sum$victims))+ geom_point()+labs(x="year",y="victims",title="Total Victims Per Year")
+gplot = gplot + geom_line(data=fitted,aes(x=x,y=y),color = "red")
+gplot
+```
+
+In this plot, the red line is the fitting line. We can see the increasing trend of the number of victims. After the year of 2010, there is an obvious increase which means the number of victims in the mass shooting increased rapidly.
+
+## V. Conclusion
+
+From the above discussions, we can obtain the number of victims per year and find the trend of the number of victims. Then we can draw the conclusion that the general trend is increasing. Especially after the year of 2010, the increasing trend is obvious, which means the number of victims in 2010-2017 increased rapidly.
+
